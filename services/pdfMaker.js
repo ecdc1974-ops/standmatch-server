@@ -38,14 +38,23 @@ export async function cretePDF(data, outputPath) {
       if (data.imagenVisual.startsWith('data:image')) {
         const b64 = data.imagenVisual.split(',')[1];
         imgBuf = Buffer.from(b64, 'base64');
+        console.log(`📸 Imagen base64 decodificada: ${imgBuf.length} bytes`);
       } else {
         imgBuf = await fetchImageAsBuffer(data.imagenVisual);
+        console.log(`📸 Imagen URL descargada: ${imgBuf ? imgBuf.length : 0} bytes`);
       }
       if (imgBuf && imgBuf.length > 1000) {
+        // Detectar formato por magic bytes
+        const isJpeg = imgBuf[0] === 0xFF && imgBuf[1] === 0xD8;
+        const isPng = imgBuf[0] === 0x89 && imgBuf[1] === 0x50;
+        console.log(`📸 Formato detectado: ${isJpeg ? 'JPEG' : isPng ? 'PNG' : 'DESCONOCIDO'} (${imgBuf.length} bytes)`);
         doc.image(imgBuf, 50, yPos, { width: 495, height: 250 });
         yPos += 260;
+        console.log('✅ Imagen incrustada en PDF correctamente');
+      } else {
+        console.log(`⚠️ Imagen descartada: buffer ${imgBuf ? imgBuf.length : 'null'} bytes (mínimo 1000)`);
       }
-    } catch(e) { console.log('⚠️ No se pudo incrustar imagen en PDF:', e.message); }
+    } catch(e) { console.error('❌ Error incrustando imagen en PDF:', e.message, e.stack); }
   }
 
   // === TITULO ===
