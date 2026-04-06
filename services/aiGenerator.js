@@ -35,7 +35,8 @@ export async function generarImagenMvpIA(briefingData) {
     console.log("🎨 Solicitando render a IA:", aiPrompt);
     
     // MVP: Usar Pollinations AI - URL API libre de generación de imágenes basada en Prompt
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(aiPrompt)}?width=800&height=400&nologo=true`;
+    const seed = Math.floor(Math.random() * 999999);
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(aiPrompt)}?width=1024&height=576&nologo=true&seed=${seed}`;
     
     const response = await fetch(url);
     const arrayBuffer = await response.arrayBuffer();
