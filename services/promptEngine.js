@@ -32,6 +32,18 @@ export function generarPromptIngles(briefingData) {
 
   const themeTokens = estilos.map(e => ESTILOS_TOKENS[e] || ESTILOS_TOKENS['Minimalista']).join(', ');
 
-  // Base prompt structure optimized for architecture/booth generation
-  return `A highly detailed photorealistic render of an exhibition booth for ${empresa}, size ${m2} sqm, ${config}. Primary brand color: ${color1}. Style: ${themeTokens}. Architectural photography, highly detailed, photorealistic 8k, unreal engine 5 render, trade show lighting.`;
+  // Elementos extra del briefing
+  const extras = [];
+  if (briefingData.tieneBanner) extras.push('with a large suspended overhead banner/hanging sign above the booth');
+  if (briefingData.doblePlanta) extras.push('two-story booth with upper VIP lounge area');
+  if (briefingData.tieneBarra) extras.push('with a bar counter area');
+  if (briefingData.tieneMostrador) extras.push('with a reception counter/desk');
+  if (briefingData.tieneTecho === 'SI') extras.push('with closed ceiling/canopy structure');
+  if (briefingData.tieneSalaReuniones) extras.push('with a private meeting room');
+  if (briefingData.fnbShowCooking) extras.push('with a show cooking kitchen area');
+  if (briefingData.numTV65 > 0 || briefingData.numTV85 > 0) extras.push('with large LED screens/displays');
+
+  const extrasStr = extras.length > 0 ? ' ' + extras.join(', ') + '.' : '';
+
+  return `A highly detailed photorealistic render of an exhibition booth for ${empresa}, size ${m2} sqm, ${config}. Primary brand color: ${color1}. Style: ${themeTokens}${extrasStr} Architectural photography, highly detailed, photorealistic 8k, unreal engine 5 render, trade show lighting.`;
 }

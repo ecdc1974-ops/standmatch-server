@@ -11,7 +11,7 @@ export async function generarMemoriaIA(briefingData, cotizacion) {
 
   if (genAI) {
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       const prompt = `Eres un arquitecto experto en ferias. Redacta una memoria descriptiva COMERCIAL en español para el cliente 
       sobre su stand V10. 
       - Superficie: ${briefingData.m2 || 20}m2
