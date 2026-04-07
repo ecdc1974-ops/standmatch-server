@@ -73,11 +73,9 @@ app.post('/api/generate-render', async (req, res) => {
     
     if (result) {
       console.log(`✅ Render ${nivel} generado con ${result.engine}`);
-      // FLUX devuelve URL, Gemini devuelve base64
       res.json({ 
         success: true, 
-        imageBase64: result.image, // Para compatibilidad (puede ser URL o base64)
-        imageUrl: result.engine === 'flux-pollinations' ? result.image : null,
+        imageBase64: result.image,
         engine: result.engine,
         nivel 
       });

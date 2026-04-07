@@ -14,9 +14,9 @@ const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GE
  */
 async function generarImagenFLUX(prompt) {
   try {
-    // Truncar prompt si es muy largo
+    // Truncar prompt — Pollinations funciona mejor con prompts cortos
     let p = prompt;
-    if (p.length > 800) p = p.substring(0, 800);
+    if (p.length > 500) p = p.substring(0, 500);
     
     // FLUX via Pollinations — 16:9 (1344x756)
     const encodedPrompt = encodeURIComponent(p);
@@ -25,13 +25,17 @@ async function generarImagenFLUX(prompt) {
     
     console.log('🎨 Generando render con FLUX (Pollinations)...');
     console.log('📝 Prompt length:', p.length, 'chars');
+    console.log('📝 URL length:', url.length, 'chars');
     
-    // Verificar que la URL responde OK (pre-genera la imagen)
-    const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(120000) });
+    // Descargar la imagen completa como buffer y convertir a base64
+    const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
     
     if (response.ok) {
-      console.log('✅ Render FLUX generado correctamente');
-      return url; // Devolvemos la URL directa (no base64)
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64 = buffer.toString('base64');
+      console.log('✅ Render FLUX generado correctamente, size:', Math.round(buffer.length / 1024), 'KB');
+      return `data:image/jpeg;base64,${base64}`;
     }
     
     console.error('⚠️ FLUX respondió:', response.status);
