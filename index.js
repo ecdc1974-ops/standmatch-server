@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { generarMemoriaIA, generarImagenGemini, generar3Renders } from './services/aiGenerator.js';
+import { generarMemoriaIA, generarImagenIA, generarImagenGemini, generar3Renders } from './services/aiGenerator.js';
 import { cretePDF } from './services/pdfMaker.js';
 
 dotenv.config();
@@ -69,13 +69,20 @@ app.post('/api/generate-render', async (req, res) => {
     const { prompt, nivel } = req.body;
     console.log(`🎨 Render solicitado para propuesta ${nivel} (prompt: ${prompt?.length || 0} chars)`);
     
-    const imageBase64 = await generarImagenGemini(prompt);
+    const result = await generarImagenIA(prompt);
     
-    if (imageBase64) {
-      console.log(`✅ Render ${nivel} generado correctamente`);
-      res.json({ success: true, imageBase64, nivel });
+    if (result) {
+      console.log(`✅ Render ${nivel} generado con ${result.engine}`);
+      // FLUX devuelve URL, Gemini devuelve base64
+      res.json({ 
+        success: true, 
+        imageBase64: result.image, // Para compatibilidad (puede ser URL o base64)
+        imageUrl: result.engine === 'flux-pollinations' ? result.image : null,
+        engine: result.engine,
+        nivel 
+      });
     } else {
-      res.status(500).json({ success: false, error: 'No se pudo generar la imagen' });
+      res.status(500).json({ success: false, error: 'No se pudo generar la imagen con ningún motor' });
     }
   } catch (err) {
     console.error('❌ Error generando render:', err);

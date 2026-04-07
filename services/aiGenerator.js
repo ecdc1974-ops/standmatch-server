@@ -1,5 +1,5 @@
-// aiGenerator V11 — Gemini Imagen 3 + Gemini 2.0 Flash para Memorias
-// 🔥 REGLA: Usar Gemini Imagen 3 para renders, NUNCA Pollinations
+// aiGenerator V11 — FLUX (Pollinations) + Gemini Imagen 3 + Gemini Flash para Memorias
+// 🔥 Motor dual: FLUX como primario (sin API key), Gemini como upgrade cuando haya key válida
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -7,78 +7,94 @@ dotenv.config();
 const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
 /**
- * Genera un render con Gemini Imagen 3
- * @param {string} prompt - El prompt completo y detallado del briefing
- * @returns {string|null} - Base64 de la imagen o null si falla
+ * Genera un render con FLUX via Pollinations (sin API key)
+ * Modelo: FLUX de Black Forest Labs — excelente para renders arquitectónicos
+ * @param {string} prompt - El prompt completo
+ * @returns {string|null} - URL de la imagen generada
  */
-export async function generarImagenGemini(prompt) {
-  if (!ai) {
-    console.error('⚠️ GEMINI_API_KEY no configurada. Value:', process.env.GEMINI_API_KEY ? 'SET' : 'MISSING');
-    return null;
-  }
-
-  // Imagen 3 tiene límite de ~480 caracteres de prompt efectivo
-  // Truncamos inteligentemente si es muy largo
-  let promptFinal = prompt;
-  if (promptFinal.length > 1500) {
-    promptFinal = promptFinal.substring(0, 1500);
-    console.log('⚠️ Prompt truncado a 1500 chars');
-  }
-
+async function generarImagenFLUX(prompt) {
   try {
-    console.log('🎨 Generando render con Gemini Imagen 3...');
-    console.log('📝 Prompt length:', promptFinal.length, 'chars');
-    console.log('📝 Prompt preview:', promptFinal.substring(0, 200) + '...');
+    // Truncar prompt si es muy largo
+    let p = prompt;
+    if (p.length > 800) p = p.substring(0, 800);
     
-    const response = await ai.models.generateImages({
-      model: 'imagen-3.0-generate-002',
-      prompt: promptFinal,
-      config: {
-        numberOfImages: 1,
-        aspectRatio: '16:9',
-      },
-    });
-
-    if (response.generatedImages && response.generatedImages.length > 0) {
-      const imageBytes = response.generatedImages[0].image.imageBytes;
-      console.log('✅ Render generado correctamente, bytes:', imageBytes?.length || 0);
-      return `data:image/png;base64,${imageBytes}`;
+    // FLUX via Pollinations — 16:9 (1344x756)
+    const encodedPrompt = encodeURIComponent(p);
+    const seed = Math.floor(Math.random() * 999999);
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1344&height=756&model=flux&seed=${seed}&nologo=true`;
+    
+    console.log('🎨 Generando render con FLUX (Pollinations)...');
+    console.log('📝 Prompt length:', p.length, 'chars');
+    
+    // Verificar que la URL responde OK (pre-genera la imagen)
+    const response = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(120000) });
+    
+    if (response.ok) {
+      console.log('✅ Render FLUX generado correctamente');
+      return url; // Devolvemos la URL directa (no base64)
     }
     
-    console.error('⚠️ No se generó ninguna imagen. Response:', JSON.stringify(response).substring(0, 500));
+    console.error('⚠️ FLUX respondió:', response.status);
     return null;
   } catch (err) {
-    console.error('❌ Error Gemini Imagen 3:', err.message || err);
-    console.error('❌ Stack:', err.stack);
-    console.error('❌ Full error:', JSON.stringify(err, null, 2).substring(0, 1000));
-    
-    // Retry con prompt simplificado
-    try {
-      console.log('🔄 Reintentando con prompt simplificado...');
-      const simplePrompt = 'A photorealistic 8k render of a modern exhibition trade show booth, professional lighting, architectural photography, clean design, high quality';
-      const retryResponse = await ai.models.generateImages({
-        model: 'imagen-3.0-generate-002',
-        prompt: simplePrompt,
-        config: { numberOfImages: 1, aspectRatio: '16:9' },
-      });
-      if (retryResponse.generatedImages && retryResponse.generatedImages.length > 0) {
-        console.log('✅ Retry exitoso');
-        return `data:image/png;base64,${retryResponse.generatedImages[0].image.imageBytes}`;
-      }
-    } catch (retryErr) {
-      console.error('❌ Retry también falló:', retryErr.message);
-    }
-    
+    console.error('❌ Error FLUX:', err.message);
     return null;
   }
 }
 
 /**
+ * Genera un render con Gemini Imagen 3 (requiere API key válida)
+ * @param {string} prompt - El prompt completo
+ * @returns {string|null} - Base64 de la imagen o null
+ */
+async function generarImagenGemini(prompt) {
+  if (!ai) return null;
+  
+  let promptFinal = prompt;
+  if (promptFinal.length > 1500) promptFinal = promptFinal.substring(0, 1500);
+
+  try {
+    console.log('🎨 Intentando Gemini Imagen 3...');
+    const response = await ai.models.generateImages({
+      model: 'imagen-3.0-generate-002',
+      prompt: promptFinal,
+      config: { numberOfImages: 1, aspectRatio: '16:9' },
+    });
+
+    if (response.generatedImages && response.generatedImages.length > 0) {
+      const imageBytes = response.generatedImages[0].image.imageBytes;
+      console.log('✅ Render Gemini generado');
+      return `data:image/png;base64,${imageBytes}`;
+    }
+    return null;
+  } catch (err) {
+    console.error('❌ Gemini Imagen 3 falló:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Motor principal: intenta Gemini primero, si falla usa FLUX
+ */
+export async function generarImagenIA(prompt) {
+  // 1. Intentar Gemini si hay key
+  if (ai) {
+    const geminiResult = await generarImagenGemini(prompt);
+    if (geminiResult) return { image: geminiResult, engine: 'gemini-imagen-3' };
+  }
+  
+  // 2. Fallback a FLUX (siempre disponible)
+  const fluxResult = await generarImagenFLUX(prompt);
+  if (fluxResult) return { image: fluxResult, engine: 'flux-pollinations' };
+  
+  return null;
+}
+
+// Alias para compatibilidad
+export { generarImagenIA as generarImagenGemini };
+
+/**
  * Genera una memoria descriptiva con Gemini 2.0 Flash
- * @param {object} briefingData - Datos del briefing
- * @param {object} cotizacion - Cotización calculada
- * @param {string} nivel - A, B o C
- * @returns {object} - { titulo, texto }
  */
 export async function generarMemoriaIA(briefingData, cotizacion, nivel = 'B') {
   const nivelLabels = { A: 'Premium', B: 'Equilibrada', C: 'Económica' };
@@ -125,22 +141,25 @@ INSTRUCCIONES:
 }
 
 /**
- * Genera los 3 renders para las 3 propuestas A/B/C en paralelo
- * @param {string[]} prompts - Array de 3 prompts (A, B, C)
- * @returns {object} - { A: base64, B: base64, C: base64 }
+ * Genera los 3 renders para A/B/C en paralelo
  */
 export async function generar3Renders(prompts) {
   console.log('🎨🎨🎨 Generando 3 renders en paralelo...');
   
   const [renderA, renderB, renderC] = await Promise.allSettled([
-    generarImagenGemini(prompts[0]),
-    generarImagenGemini(prompts[1]),
-    generarImagenGemini(prompts[2]),
+    generarImagenIA(prompts[0]),
+    generarImagenIA(prompts[1]),
+    generarImagenIA(prompts[2]),
   ]);
 
   return {
-    A: renderA.status === 'fulfilled' ? renderA.value : null,
-    B: renderB.status === 'fulfilled' ? renderB.value : null,
-    C: renderC.status === 'fulfilled' ? renderC.value : null,
+    A: renderA.status === 'fulfilled' && renderA.value ? renderA.value.image : null,
+    B: renderB.status === 'fulfilled' && renderB.value ? renderB.value.image : null,
+    C: renderC.status === 'fulfilled' && renderC.value ? renderC.value.image : null,
+    engines: {
+      A: renderA.status === 'fulfilled' && renderA.value ? renderA.value.engine : 'failed',
+      B: renderB.status === 'fulfilled' && renderB.value ? renderB.value.engine : 'failed',
+      C: renderC.status === 'fulfilled' && renderC.value ? renderC.value.engine : 'failed',
+    }
   };
 }
