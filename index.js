@@ -26,6 +26,43 @@ if (!fs.existsSync(pdfsDir)) {
 import { initMailer } from './services/mailer.js';
 initMailer();
 
+// ─── ENDPOINT: Debug / Diagnóstico ──────
+app.get('/api/debug', async (req, res) => {
+  const hasKey = !!process.env.GEMINI_API_KEY;
+  const keyPreview = hasKey ? process.env.GEMINI_API_KEY.substring(0, 10) + '...' : 'MISSING';
+  
+  let testResult = 'not tested';
+  if (hasKey) {
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      // Test rápido con text
+      const textResp = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: 'Say "API OK" in one word',
+      });
+      testResult = 'TEXT OK: ' + (textResp.text || '').substring(0, 50);
+      
+      // Test imagen
+      try {
+        const imgResp = await ai.models.generateImages({
+          model: 'imagen-3.0-generate-002',
+          prompt: 'A white cube on a white background, minimal',
+          config: { numberOfImages: 1 },
+        });
+        testResult += ' | IMAGE OK: ' + (imgResp.generatedImages?.length || 0) + ' images';
+      } catch (imgErr) {
+        testResult += ' | IMAGE FAIL: ' + imgErr.message;
+      }
+    } catch (err) {
+      testResult = 'FAIL: ' + err.message;
+    }
+  }
+  
+  res.json({ hasKey, keyPreview, testResult, nodeVersion: process.version });
+});
+
 // ─── ENDPOINT: Generar 1 render (llamado desde frontend) ──────
 app.post('/api/generate-render', async (req, res) => {
   try {
