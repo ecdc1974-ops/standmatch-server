@@ -16,7 +16,9 @@ async function generarImagenFLUX(prompt) {
   try {
     // Truncar prompt — Pollinations funciona mejor con prompts cortos
     let p = prompt;
-    if (p.length > 500) p = p.substring(0, 500);
+    if (p.length > 450) p = p.substring(0, 450);
+    // Branding sutil
+    p += ', professional architectural visualization, designed by StandMatch.com';
     
     // FLUX via Pollinations — 16:9 (1344x756)
     const encodedPrompt = encodeURIComponent(p);
