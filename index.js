@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { generarMemoriaIA } from './services/aiGenerator.js';
+import { generarMemoriaIA, generarImagenGemini, generar3Renders } from './services/aiGenerator.js';
 import { cretePDF } from './services/pdfMaker.js';
 
 dotenv.config();
@@ -16,72 +16,106 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Support large JSON if it has embedded images
+app.use(express.json({ limit: '50mb' }));
 
-// Ensure PDF output directory exists
 const pdfsDir = path.join(__dirname, 'pdfs');
 if (!fs.existsSync(pdfsDir)) {
   fs.mkdirSync(pdfsDir, { recursive: true });
 }
 
-// Inicializamos el generador de correos fantasma
 import { initMailer } from './services/mailer.js';
 initMailer();
 
+// ─── ENDPOINT: Generar 1 render (llamado desde frontend) ──────
+app.post('/api/generate-render', async (req, res) => {
+  try {
+    const { prompt, nivel } = req.body;
+    console.log(`🎨 Render solicitado para propuesta ${nivel} (prompt: ${prompt?.length || 0} chars)`);
+    
+    const imageBase64 = await generarImagenGemini(prompt);
+    
+    if (imageBase64) {
+      console.log(`✅ Render ${nivel} generado correctamente`);
+      res.json({ success: true, imageBase64, nivel });
+    } else {
+      res.status(500).json({ success: false, error: 'No se pudo generar la imagen' });
+    }
+  } catch (err) {
+    console.error('❌ Error generando render:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── ENDPOINT: Generar 3 renders de golpe ──────
+app.post('/api/generate-all-renders', async (req, res) => {
+  try {
+    const { prompts } = req.body; // Array de 3 prompts
+    console.log('🎨🎨🎨 Generando 3 renders en paralelo...');
+    
+    const renders = await generar3Renders(prompts);
+    
+    console.log('✅ Renders: A=', !!renders.A, 'B=', !!renders.B, 'C=', !!renders.C);
+    res.json({ success: true, renders });
+  } catch (err) {
+    console.error('❌ Error renders:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── ENDPOINT: Submit briefing completo (3 propuestas) ──────
 app.post('/api/submit-briefing', (req, res) => {
-  console.log('📬 Nuevo Briefing Recibido! Respondiendo OK inmediato al cliente.');
+  console.log('📬 Nuevo Briefing V11 Recibido! (3 propuestas A/B/C)');
   
-  // 1. RESPONDER INMEDIATAMENTE AL FRONTEND PARA CORTAR LA CONEXIÓN
   res.status(200).json({ 
     success: true, 
-    message: 'Stand analizado. Renders IA en proceso...',
-    pdfId: `StandMatch_Briefing_${Date.now()}.pdf`
+    message: 'Briefing V11 recibido. Procesando 3 propuestas...',
+    pdfId: `StandMatch_V11_${Date.now()}.pdf`
   });
 
-  // 2. LANZAR EL HILO ASINCRONO PARA IA, PDF Y EMAILS
   (async () => {
     try {
-      const { briefingData, cotizacion, userDetails } = req.body;
+      const { briefingData, propuestas, renders, userDetails } = req.body;
       
-      console.log('🧠 Solicitando Memoria Descriptiva a Gemini IA...');
-      const memoriaInfo = await generarMemoriaIA(briefingData, cotizacion);
-      
-      console.log('🎨 Generando render fotorrealista...');
-      const { generarImagenMvpIA } = await import('./services/aiGenerator.js');
-      const imagenBase64 = await generarImagenMvpIA(briefingData);
+      console.log('🧠 Procesando 3 propuestas...');
+      console.log('   A (Premium):', propuestas?.[0]?.cotizacion?.totalSinIva + '€');
+      console.log('   B (Equilibrada):', propuestas?.[1]?.cotizacion?.totalSinIva + '€');
+      console.log('   C (Económica):', propuestas?.[2]?.cotizacion?.totalSinIva + '€');
 
-      console.log('📄 Generando PDF corporativo...');
-      const filename = `StandMatch_Briefing_${Date.now()}.pdf`;
+      console.log('📄 Generando PDF corporativo V11...');
+      const filename = `StandMatch_V11_${Date.now()}.pdf`;
       const filepath = path.join(pdfsDir, filename);
       
+      // Usar la primera propuesta como principal para el PDF
+      const mainProp = propuestas?.[1] || propuestas?.[0]; // B como default
       await cretePDF({
         briefingData,
-        cotizacion,
-        memoriaText: memoriaInfo.texto,
-        imagenVisual: imagenBase64
+        cotizacion: mainProp?.cotizacion,
+        memoriaText: mainProp?.memoria?.texto || '',
+        imagenVisual: renders?.B || renders?.A || null
       }, filepath);
       
-      console.log(`✅ ¡PDF Generado con éxito! Guardado en: ${filepath}`);
+      console.log(`✅ PDF V11 generado: ${filepath}`);
 
-      const targetEmail = (userDetails && userDetails.email) ? userDetails.email.toLowerCase().trim() : '';
+      const targetEmail = (userDetails?.email || '').toLowerCase().trim();
       const whitelistVIP = ['damian@marketing121.net', 'matias@magrada.com', 'jonasseul@protonmail.com', 'elenaamafutskaya@gmail.com', 'enric.carreras74@gmail.com'];
       
       import('./services/mailer.js').then(async ({ enviarAgradecimientoCliente, enviarPdfAgencia }) => {
          if (whitelistVIP.includes(targetEmail) || targetEmail.includes('standmatch')) {
-            console.log(`👑 VIP detectado (${targetEmail}) -> Enviando PDF.`);
+            console.log(`👑 VIP (${targetEmail}) -> Enviando PDF.`);
             await enviarPdfAgencia(targetEmail, filepath, filename);
-         } else {
-            console.log(`👤 Cliente normal (${targetEmail}) -> Enviando acuse recibo.`);
+         } else if (targetEmail) {
+            console.log(`👤 Cliente (${targetEmail}) -> Acuse recibo.`);
             await enviarAgradecimientoCliente(targetEmail);
          }
       });
     } catch (error) {
-      console.error('❌ Error asíncrono fabricando Dossier:', error);
+      console.error('❌ Error asíncrono:', error);
     }
   })();
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 StandMatch Backend Server corriendo en http://localhost:${PORT}`);
-  console.log(`📁 Los PDFs generados se guardarán en: ${pdfsDir}`);
+  console.log(`🚀 StandMatch V11 Backend en http://localhost:${PORT}`);
+  console.log(`📁 PDFs en: ${pdfsDir}`);
+  console.log(`🎨 Render engine: Gemini Imagen 3`);
 });
