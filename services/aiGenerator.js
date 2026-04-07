@@ -13,17 +13,26 @@ const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GE
  */
 export async function generarImagenGemini(prompt) {
   if (!ai) {
-    console.error('⚠️ GEMINI_API_KEY no configurada');
+    console.error('⚠️ GEMINI_API_KEY no configurada. Value:', process.env.GEMINI_API_KEY ? 'SET' : 'MISSING');
     return null;
+  }
+
+  // Imagen 3 tiene límite de ~480 caracteres de prompt efectivo
+  // Truncamos inteligentemente si es muy largo
+  let promptFinal = prompt;
+  if (promptFinal.length > 1500) {
+    promptFinal = promptFinal.substring(0, 1500);
+    console.log('⚠️ Prompt truncado a 1500 chars');
   }
 
   try {
     console.log('🎨 Generando render con Gemini Imagen 3...');
-    console.log('📝 Prompt length:', prompt.length, 'chars');
+    console.log('📝 Prompt length:', promptFinal.length, 'chars');
+    console.log('📝 Prompt preview:', promptFinal.substring(0, 200) + '...');
     
     const response = await ai.models.generateImages({
       model: 'imagen-3.0-generate-002',
-      prompt: prompt,
+      prompt: promptFinal,
       config: {
         numberOfImages: 1,
         aspectRatio: '16:9',
@@ -32,14 +41,34 @@ export async function generarImagenGemini(prompt) {
 
     if (response.generatedImages && response.generatedImages.length > 0) {
       const imageBytes = response.generatedImages[0].image.imageBytes;
-      console.log('✅ Render generado correctamente');
+      console.log('✅ Render generado correctamente, bytes:', imageBytes?.length || 0);
       return `data:image/png;base64,${imageBytes}`;
     }
     
-    console.error('⚠️ No se generó ninguna imagen');
+    console.error('⚠️ No se generó ninguna imagen. Response:', JSON.stringify(response).substring(0, 500));
     return null;
   } catch (err) {
     console.error('❌ Error Gemini Imagen 3:', err.message || err);
+    console.error('❌ Stack:', err.stack);
+    console.error('❌ Full error:', JSON.stringify(err, null, 2).substring(0, 1000));
+    
+    // Retry con prompt simplificado
+    try {
+      console.log('🔄 Reintentando con prompt simplificado...');
+      const simplePrompt = 'A photorealistic 8k render of a modern exhibition trade show booth, professional lighting, architectural photography, clean design, high quality';
+      const retryResponse = await ai.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: simplePrompt,
+        config: { numberOfImages: 1, aspectRatio: '16:9' },
+      });
+      if (retryResponse.generatedImages && retryResponse.generatedImages.length > 0) {
+        console.log('✅ Retry exitoso');
+        return `data:image/png;base64,${retryResponse.generatedImages[0].image.imageBytes}`;
+      }
+    } catch (retryErr) {
+      console.error('❌ Retry también falló:', retryErr.message);
+    }
+    
     return null;
   }
 }
