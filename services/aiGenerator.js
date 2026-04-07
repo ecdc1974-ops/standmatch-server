@@ -147,25 +147,55 @@ INSTRUCCIONES:
 }
 
 /**
- * Genera los 3 renders para A/B/C en paralelo
+ * Genera un render con retry automático (2 intentos)
+ */
+async function generarConRetry(prompt, label = '') {
+  for (let intento = 1; intento <= 2; intento++) {
+    console.log(`🎨 [${label}] Intento ${intento}/2...`);
+    const result = await generarImagenIA(prompt);
+    if (result) {
+      console.log(`✅ [${label}] Render generado con ${result.engine}`);
+      return result;
+    }
+    if (intento < 2) {
+      console.log(`⚠️ [${label}] Falló, reintentando en 5s...`);
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  console.error(`❌ [${label}] Falló tras 2 intentos`);
+  return null;
+}
+
+/**
+ * Genera los 3 renders para A/B/C — SECUENCIAL con delay
+ * (Pollinations se satura con 3 simultáneas)
  */
 export async function generar3Renders(prompts) {
-  console.log('🎨🎨🎨 Generando 3 renders en paralelo...');
+  console.log('🎨🎨🎨 Generando 3 renders SECUENCIALES (evitar rate-limit)...');
   
-  const [renderA, renderB, renderC] = await Promise.allSettled([
-    generarImagenIA(prompts[0]),
-    generarImagenIA(prompts[1]),
-    generarImagenIA(prompts[2]),
-  ]);
-
+  // Render A
+  const renderA = await generarConRetry(prompts[0], 'PREMIUM');
+  
+  // Pausa 3s para no saturar
+  await new Promise(r => setTimeout(r, 3000));
+  
+  // Render B
+  const renderB = await generarConRetry(prompts[1], 'EQUILIBRADA');
+  
+  // Pausa 3s
+  await new Promise(r => setTimeout(r, 3000));
+  
+  // Render C
+  const renderC = await generarConRetry(prompts[2], 'ECONÓMICA');
+  
   return {
-    A: renderA.status === 'fulfilled' && renderA.value ? renderA.value.image : null,
-    B: renderB.status === 'fulfilled' && renderB.value ? renderB.value.image : null,
-    C: renderC.status === 'fulfilled' && renderC.value ? renderC.value.image : null,
+    A: renderA ? renderA.image : null,
+    B: renderB ? renderB.image : null,
+    C: renderC ? renderC.image : null,
     engines: {
-      A: renderA.status === 'fulfilled' && renderA.value ? renderA.value.engine : 'failed',
-      B: renderB.status === 'fulfilled' && renderB.value ? renderB.value.engine : 'failed',
-      C: renderC.status === 'fulfilled' && renderC.value ? renderC.value.engine : 'failed',
+      A: renderA ? renderA.engine : 'failed',
+      B: renderB ? renderB.engine : 'failed',
+      C: renderC ? renderC.engine : 'failed',
     }
   };
 }
