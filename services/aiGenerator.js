@@ -80,16 +80,71 @@ async function generarImagenGemini(prompt) {
 }
 
 /**
- * Motor principal: intenta Gemini primero, si falla usa FLUX
+ * Genera un render con OpenAI DALL-E 3 (mejor calidad)
+ * @param {string} prompt - El prompt completo
+ * @returns {string|null} - Base64 de la imagen o null
+ */
+async function generarImagenOpenAI(prompt) {
+  if (!process.env.OPENAI_API_KEY) return null;
+  
+  try {
+    // DALL-E 3 acepta prompts largos pero mejor optimizado a ~1000 chars
+    let p = prompt;
+    if (p.length > 1000) p = p.substring(0, 1000);
+    
+    console.log('🎨 Intentando OpenAI DALL-E 3...');
+    
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: p,
+        n: 1,
+        size: '1792x1024',
+        quality: 'hd',
+        response_format: 'b64_json'
+      }),
+      signal: AbortSignal.timeout(120000)
+    });
+    
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error('❌ OpenAI DALL-E 3 error:', response.status, errBody.substring(0, 200));
+      return null;
+    }
+    
+    const data = await response.json();
+    if (data.data && data.data[0] && data.data[0].b64_json) {
+      const b64 = data.data[0].b64_json;
+      console.log('✅ Render OpenAI DALL-E 3 generado, size:', Math.round(b64.length * 0.75 / 1024), 'KB');
+      return `data:image/png;base64,${b64}`;
+    }
+    return null;
+  } catch (err) {
+    console.error('❌ Error OpenAI DALL-E 3:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Motor principal: OpenAI DALL-E 3 → Gemini → FLUX fallback
  */
 export async function generarImagenIA(prompt) {
-  // 1. Intentar Gemini si hay key
+  // 1. Intentar OpenAI DALL-E 3 (mejor calidad)
+  const openaiResult = await generarImagenOpenAI(prompt);
+  if (openaiResult) return { image: openaiResult, engine: 'openai-dalle-3' };
+  
+  // 2. Intentar Gemini si hay key
   if (ai) {
     const geminiResult = await generarImagenGemini(prompt);
     if (geminiResult) return { image: geminiResult, engine: 'gemini-imagen-3' };
   }
   
-  // 2. Fallback a FLUX (siempre disponible)
+  // 3. Fallback a FLUX (último recurso)
   const fluxResult = await generarImagenFLUX(prompt);
   if (fluxResult) return { image: fluxResult, engine: 'flux-pollinations' };
   
@@ -198,4 +253,87 @@ export async function generar3Renders(prompts) {
       C: renderC ? renderC.engine : 'failed',
     }
   };
+}
+
+/**
+ * Procesa el Briefing AI (Ruta Mágica) usando Gemini Vision Multimodal
+ * @param {Object} baseData - Los datos limpios recogidos del briefing exprés
+ * @param {Array} attachments - Archivos { mimeType, data (base64) }
+ */
+export async function parseBriefingWithVision(baseData, attachments) {
+  if (!process.env.OPENAI_API_KEY) {
+    console.warn("⚠️ No hay API Key de OpenAI. Skipando Vision parsing...");
+    return baseData;
+  }
+  
+  try {
+    console.log("👁️ Iniciando OpenAI (gpt-4o-mini) Vision Parsing con", attachments?.length || 0, "adjuntos.");
+    
+    let textPrompt = `Eres el Arquitecto Jefe de StandMatch. Analiza el siguiente documento/prompt.
+Parámetros obligatorios intocables:
+- Feria: ${baseData.feria}
+- Metros: ${baseData.fachada}m x ${baseData.fondo}m (${baseData.m2}m2)
+- Altura permitida: ${baseData.altura}m
+- Presupuesto sugerido orientativo: ${baseData.presupuesto}
+- Prompt/Texto del Usuario: "${baseData.magicPrompt || 'Sin texto'}"
+
+TAREA:
+1. Si hay imágenes o planos, léelos a fondo: deduce si es ISLA o PENINSULA, cuenta caras abiertas.
+2. Identifica colores corporativos, tipologías de stands (madera, modular, híbrido). Recuerda las reglas técnicas: "Usa el catálogo EGGER para madera, y Formica si hay curvas".
+3. Identifica si reclaman elementos aéreos complejos (rigging), TV, vitrinas, estanterías, sala de reuniones, pantallas gigantes o elementos extravagantes.
+4. Devuelve UNICAMENTE un objeto JSON plano combinando los datos obligatorios con todas las variables extra descubiertas (ej. \`sistema\`, \`tipoSuelo\`, \`tieneTecho\`, \`ledWall_preset1\`, etc). Absolutamente nada más que el JSON válido sin bloques markdown \`\`\`json.`;
+
+    const contentArray = [{ type: "text", text: textPrompt }];
+    
+    if (attachments && attachments.length > 0) {
+      attachments.forEach(att => {
+        contentArray.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${att.mimeType};base64,${att.data}`
+          }
+        });
+      });
+    }
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content: contentArray
+          }
+        ],
+        max_tokens: 1500,
+        temperature: 0.1
+      })
+    });
+
+    if (!response.ok) {
+       const errBody = await response.text();
+       throw new Error(`OpenAI API error: ${response.status} - ${errBody}`);
+    }
+
+    const data = await response.json();
+    let responseText = data.choices[0].message.content || '';
+    responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    try {
+      const parsedData = JSON.parse(responseText);
+      console.log("✅ Vision AI Parseó el Documento Exitosamente con GPT-4o-mini.");
+      return { ...baseData, ...parsedData };
+    } catch(e) {
+      console.error("❌ Falló el JSON parse del output Vision. Fallback a crudo.");
+      return baseData;
+    }
+  } catch(err) {
+    console.error("❌ Error API Vision Parsing OpenAI:", err.message);
+    return baseData;
+  }
 }
